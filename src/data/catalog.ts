@@ -84,8 +84,19 @@ export const ARTIST_COVER: Record<string, string> = {
   cazzu: "/media/covers/cazzu.jpg",
 };
 
+function withBase(path: string) {
+  const base = import.meta.env.BASE_URL ?? "/";
+  if (!path.startsWith("/") || base === "/") return path;
+  const root = base.endsWith("/") ? base.slice(0, -1) : base;
+  return `${root}${path}`;
+}
+
+export function asset(path: string) {
+  return withBase(path);
+}
+
 export function eventImage(e: { shot: Shot; artist: string; cover?: string }) {
-  return e.cover ?? ARTIST_COVER[e.artist] ?? SHOT[e.shot];
+  return withBase(e.cover ?? ARTIST_COVER[e.artist] ?? SHOT[e.shot]);
 }
 
 export const artists: Artist[] = [

@@ -146,6 +146,7 @@ function authPopupPlugin(): Plugin {
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
 export default defineConfig(({ command, isPreview }) => ({
+  base: process.env.GITHUB_PAGES === "1" ? "/ticketmaster/" : "/",
   server: {
     host: "0.0.0.0",
     port: 8080,
@@ -169,13 +170,20 @@ export default defineConfig(({ command, isPreview }) => ({
     tanstackStart(),
     ...(command === "build" || isPreview
       ? [
-          nitro({
-            preset: "vercel",
-            // Auto-registers server/middleware/* (the PWA install page +
-            // manifest + head-tag middleware). Nitro v3 defaults serverDir to
-            // false, so removing this silently unwires /?install=1 on deploys.
-            serverDir: "./server",
-          }),
+          nitro(
+            process.env.GITHUB_PAGES === "1"
+              ? {
+                  preset: "github-pages",
+                  prerender: { crawlLinks: false, routes: ["/", "/404.html"] },
+                }
+              : {
+                  preset: "vercel",
+                  // Auto-registers server/middleware/* (the PWA install page +
+                  // manifest + head-tag middleware). Nitro v3 defaults serverDir to
+                  // false, so removing this silently unwires /?install=1 on deploys.
+                  serverDir: "./server",
+                },
+          ),
         ]
       : []),
     viteReact(),

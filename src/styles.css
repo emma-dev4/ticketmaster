@@ -67,6 +67,9 @@
   .safe-sweep {
     animation: safesweep 2.2s linear infinite;
   }
+  .barcode-live {
+    animation: barcodescan 1.35s linear infinite;
+  }
 }
 
 @keyframes safesweep {
@@ -75,6 +78,15 @@
   }
   100% {
     transform: translateX(360%);
+  }
+}
+
+@keyframes barcodescan {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(280px);
   }
 }
 

@@ -1,9 +1,9 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { ChevronLeft, Info, RefreshCw, UserRound } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { eventImage, getEvent, placeLine } from "@/data/catalog";
-import { formatWhen, money } from "@/lib/format";
-import { entryLevel, hash, sectionName } from "@/lib/offers";
+import { money } from "@/lib/format";
+import { entryLevel, hash } from "@/lib/offers";
 import { useApp } from "@/lib/store";
 import { useT } from "@/components/use-t";
 
@@ -20,6 +20,15 @@ function gateFor(section: string) {
   return "D";
 }
 
+function headerWhen(iso: string, lang: "en" | "es") {
+  const d = new Date(iso);
+  const loc = lang === "es" ? "es" : "en-US";
+  const wd = new Intl.DateTimeFormat(loc, { weekday: "short" }).format(d);
+  const day = new Intl.DateTimeFormat(loc, { month: "short", day: "numeric", year: "numeric" }).format(d);
+  const time = new Intl.DateTimeFormat(loc, { hour: "numeric", minute: "2-digit" }).format(d);
+  return `${wd} · ${day} · ${time}`;
+}
+
 function TicketPage() {
   const { orderId } = Route.useParams();
   const { t, lang } = useT();
@@ -28,42 +37,54 @@ function TicketPage() {
   const event = order ? getEvent(order.eventId) : undefined;
   const [i, setI] = useState(0);
   const [bucket, setBucket] = useState(() => Math.floor(Date.now() / 15000));
-  const [left, setLeft] = useState(15);
-  const [tilt, setTilt] = useState({ x: 62, y: 28 });
-  const [open, setOpen] = useState(true);
+  const [tilt, setTilt] = useState({ x: 70, y: 18 });
+  const [info, setInfo] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const touchX = useRef(0);
 
   useEffect(() => {
-    const tick = () => {
-      const now = Date.now();
-      const b = Math.floor(now / 15000);
-      setBucket(b);
-      setLeft(15 - Math.floor((now % 15000) / 1000));
+    const prev = document.body.style.background;
+    document.body.style.background = "#000";
+    return () => {
+      document.body.style.background = prev;
     };
-    tick();
-    const id = window.setInterval(tick, 250);
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setBucket(Math.floor(Date.now() / 15000)), 250);
     return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {
     const onTilt = (e: DeviceOrientationEvent) => {
       const g = e.gamma ?? 0;
-      const b = e.beta ?? 45;
+      const b = e.beta ?? 40;
       setTilt({
-        x: Math.max(12, Math.min(88, 50 + g * 0.8)),
-        y: Math.max(10, Math.min(80, b * 0.45)),
+        x: Math.max(8, Math.min(92, 58 + g * 0.9)),
+        y: Math.max(6, Math.min(70, 18 + (b - 40) * 0.35)),
       });
     };
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      const w = window.innerWidth || 1;
+      const h = window.innerHeight || 1;
+      setTilt({ x: (e.clientX / w) * 100, y: (e.clientY / h) * 55 });
+    };
     window.addEventListener("deviceorientation", onTilt);
-    return () => window.removeEventListener("deviceorientation", onTilt);
+    window.addEventListener("pointermove", onMove);
+    return () => {
+      window.removeEventListener("deviceorientation", onTilt);
+      window.removeEventListener("pointermove", onMove);
+    };
   }, []);
 
   if (!order || !event) {
     return (
-      <main className="bg-ticket px-4 py-16 text-center text-ticket-fg">
+      <main className="bg-black px-4 py-16 text-center text-white">
         <h1 className="text-2xl font-extrabold">{t("notFound")}</h1>
-        <Link to="/tickets" className="mt-3 inline-flex text-blue">
+        <button type="button" className="mt-3 font-bold text-[#4da3ff]" onClick={() => void navigate({ to: "/tickets" })}>
           {t("myTickets")}
-        </Link>
+        </button>
       </main>
     );
   }
@@ -73,137 +94,182 @@ function TicketPage() {
   const start = new Date(event.date);
   const doors = new Date(start.getTime() - 90 * 60 * 1000);
   const gate = gateFor(order.section);
-  const token = `TM1.${order.id}.${event.id}.${order.section}.${order.row}.${seat}.${bucket}.${(hash(`${order.id}|${seat}|${bucket}`) >>> 0).toString(16)}`;
+  const ga = order.tier === "ga" || order.section === "GA";
+  const seed = `${order.id}|${event.id}|${order.section}|${order.row}|${seat}|${bucket}`;
   const orderNo = order.id.length > 6 ? `${order.id.slice(0, 2)}-${order.id.slice(2, 8)}/${event.market.toUpperCase()}` : order.id;
+  const when = headerWhen(event.date, lang);
+  const doorTime = new Intl.DateTimeFormat(lang === "es" ? "es" : "en-US", { hour: "numeric", minute: "2-digit" }).format(doors);
+  const kind = ga ? t("generalAdmission") : t("reservedSeat");
+  const sub =
+    order.type === "platinum" || order.type === "vip"
+      ? t("upgradedTicket")
+      : order.type === "resale"
+        ? t("verifiedResale")
+        : order.type === "accessible"
+          ? t("accessibleSeat")
+          : t("standardTicket");
+
+  const step = (dir: number) => setI((n) => (n + dir + order.seats.length) % order.seats.length);
 
   return (
-    <main className="min-h-screen bg-ticket text-ticket-fg">
-      <div className="bg-blue px-4 py-3 text-on-blue">
-        <div className="mx-auto flex max-w-lg items-center justify-between">
+    <main className="min-h-dvh bg-black text-white">
+      <header className="px-1 pb-2 pt-3">
+        <div className="grid grid-cols-[44px_1fr_44px] items-center">
           <button type="button" aria-label={t("back")} className="grid h-11 w-11 place-items-center" onClick={() => void navigate({ to: "/tickets" })}>
-            <ChevronLeft />
+            <ChevronLeft className="h-6 w-6" />
           </button>
-          <p className="font-extrabold tracking-tighter">ticketmaster</p>
-          <div className="text-right text-sm font-semibold leading-tight">
-            <div>{formatWhen(event.date, lang, "short")}</div>
-            <div>{formatWhen(event.date, lang, "time")}</div>
+          <div className="min-w-0 text-center">
+            <h1 className="truncate text-[15px] font-bold uppercase tracking-tight">{event.title}</h1>
+            <p className="truncate text-[11px] text-[#9a9a9a]">
+              {when} · {event.venue}
+            </p>
           </div>
+          <span />
         </div>
+      </header>
+
+      <div className="bg-[#026cdf] py-[3px] text-center text-[11px] font-bold tracking-tight">ticketmaster</div>
+      <div className="flex items-center justify-center gap-1.5 bg-[#161616] py-1.5 text-[12px] text-[#d7d7d7]">
+        <UserRound className="h-3.5 w-3.5" />
+        {t("assignedTo")}
       </div>
 
-      <div className="relative mx-auto max-w-lg">
-        <img src={eventImage(event)} alt="" className="aspect-[16/7] w-full object-cover" />
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background: `radial-gradient(circle at ${tilt.x}% ${tilt.y}%, color-mix(in srgb, var(--color-on-blue) 55%, transparent), transparent 42%)`,
+      {active ? (
+        <article
+          className="mx-3 mt-3 overflow-hidden bg-[#111]"
+          onTouchStart={(e) => {
+            touchX.current = e.changedTouches[0]?.clientX ?? 0;
           }}
-        />
+          onTouchEnd={(e) => {
+            const dx = (e.changedTouches[0]?.clientX ?? 0) - touchX.current;
+            if (order.seats.length < 2) return;
+            if (dx > 48) step(-1);
+            if (dx < -48) step(1);
+          }}
+        >
+          <div className="relative h-[430px] bg-black">
+            <img src={eventImage(event)} alt="" className="h-full w-full object-cover object-top" />
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background: `radial-gradient(circle at ${tilt.x}% ${tilt.y}%, rgba(255,255,255,0.42), transparent 28%)`,
+              }}
+            />
+            <div className="absolute inset-x-3 top-3 bg-white px-3 pb-2.5 pt-2 text-black shadow-lg">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[13px] font-semibold leading-tight">{t("screenshotsWont")}</p>
+                <RefreshCw className="h-4 w-4 shrink-0" />
+              </div>
+              <div className="relative mt-1.5 h-14 overflow-hidden bg-white">
+                <LiveBarcode seed={seed} />
+                <div className="barcode-live pointer-events-none absolute bottom-0 top-0 w-2.5 bg-[#026cdf] shadow-[0_0_12px_#026cdf]" />
+              </div>
+            </div>
+          </div>
+
+          <div className="px-4 pb-4 pt-3">
+            <p className="text-[17px] font-semibold leading-tight">{kind}</p>
+            <p className="text-[13px] text-[#9a9a9a]">{sub}</p>
+            <div className="mt-4 grid grid-cols-3 text-left">
+              <Cell k={t("secLabel")} v={ga ? "GA" : order.section} />
+              <Cell k={t("rowLabel")} v={ga ? "—" : order.row} />
+              <Cell k={t("seatLabel")} v={seat == null || ga ? "—" : String(seat)} />
+            </div>
+            <button
+              type="button"
+              className="mt-4 w-full bg-white py-2.5 text-center text-[13px] font-bold uppercase tracking-wide text-black"
+              onClick={() => setInfo(true)}
+            >
+              {t("enterGate", { gate })}
+            </button>
+          </div>
+        </article>
+      ) : (
+        <div className="mx-4 mt-8 rounded-xl border border-white/15 p-4 text-center">
+          <p className="text-lg font-extrabold">{order.status === "listed" ? t("listed") : order.status === "sold" ? t("sold") : t("transferred")}</p>
+          {order.transferEmail ? <p className="text-sm text-[#9a9a9a]">{order.transferEmail}</p> : null}
+        </div>
+      )}
+
+      {order.seats.length > 1 && active ? (
+        <p className="mt-3 text-center">
+          <span className="rounded-full bg-[#2a2a2a] px-3 py-1 text-xs text-[#cfcfcf]">{t("ofSeats", { i: i + 1, n: order.seats.length })}</span>
+        </p>
+      ) : null}
+
+      <div className="mt-4 flex items-center justify-center gap-3 px-4 pb-10">
+        <button type="button" className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#1c1c1e] px-3 text-left text-[11px] font-semibold leading-tight" onClick={() => setSaved(true)}>
+          <WalletMark />
+          <span className="max-w-[7.5rem] leading-tight">{t("addWallet")}</span>
+        </button>
+        <button type="button" className="inline-flex h-11 items-center gap-2 rounded-full bg-[#1c1c1e] px-4 text-sm font-semibold" onClick={() => setInfo(true)}>
+          <Info className="h-4 w-4" />
+          {t("ticketInfo")}
+        </button>
       </div>
 
-      <div className="mx-auto max-w-lg px-5 py-5">
-        <p className="text-sm font-semibold text-ticket-muted">{event.venue}</p>
-        <h1 className="text-3xl font-extrabold leading-tight tracking-tight">{event.title}</h1>
-        {event.sub ? <p className="text-sm text-ticket-muted">{event.sub}</p> : null}
-        <p className="mt-1 text-sm text-ticket-muted">
-          {placeLine(event)} · {formatWhen(event.date, lang, "long")} · {formatWhen(event.date, lang, "time")}
-        </p>
+      {saved ? (
+        <p className="mx-4 -mt-6 mb-8 text-center text-xs text-[#bdbdbd]">{t("savedDevice")}</p>
+      ) : null}
 
-        <div className="mt-6 grid grid-cols-3 gap-2 text-center">
-          <Cell k={t("sec")} v={order.section} />
-          <Cell k={t("row")} v={order.row} />
-          <Cell k={t("seat")} v={String(seat ?? "")} />
-        </div>
+      {info ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/70" onClick={() => setInfo(false)}>
+          <div className="max-h-[88dvh] w-full overflow-auto rounded-t-2xl bg-[#1c1c1e] px-5 pb-8 pt-3" onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/30" />
+            <h2 className="text-lg font-bold">{t("ticketInfo")}</h2>
+            <p className="mt-1 text-sm text-[#bdbdbd]">{t("wayfinding", { time: doorTime })}</p>
 
-        <div className="mt-5 grid grid-cols-3 gap-2 border-y border-ticket-muted/30 py-3 text-center text-sm">
-          <div>
-            <p className="text-xs font-bold uppercase text-ticket-muted">{t("gate")}</p>
-            <p className="font-extrabold">{gate}</p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase text-ticket-muted">{t("doors")}</p>
-            <p className="font-extrabold">{formatWhen(doors.toISOString(), lang, "time")}</p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase text-ticket-muted">{t("entry")}</p>
-            <p className="font-extrabold">{entryLevel(order.tier, lang)}</p>
-          </div>
-        </div>
-
-        <p className="mt-4 text-center text-xs font-bold uppercase tracking-widest text-ticket-muted">
-          {order.type === "resale" ? t("resale") : order.type === "platinum" ? t("platinum") : order.type === "vip" ? t("vip") : order.type === "accessible" ? t("accessible") : t("standard")}
-          {" · "}
-          {t("mobileEntry")}
-        </p>
-
-        {active ? (
-          <div className="relative mt-4 overflow-hidden rounded-lg bg-bg p-3 text-fg">
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-1/5 bg-blue/25 safe-sweep" />
-            <SafeQr value={token} />
-            <p className="mt-2 text-center text-xs font-bold uppercase tracking-wide text-blue">{t("safetixLive")}</p>
-            <p className="text-center text-sm font-extrabold tabular-nums">{t("refreshesIn", { s: left })}</p>
-            <p className="mt-1 break-all text-center font-mono text-xs text-muted">{token}</p>
-          </div>
-        ) : (
-          <div className="mt-6 rounded-xl border border-ticket-muted/40 p-4 text-center">
-            <p className="text-lg font-extrabold">{order.status === "listed" ? t("listed") : order.status === "sold" ? t("sold") : t("transferred")}</p>
-            {order.transferEmail ? <p className="text-sm text-ticket-muted">{order.transferEmail}</p> : null}
-          </div>
-        )}
-
-        {active ? (
-          <p className="mt-3 text-center text-xs text-ticket-muted">
-            {t("screenshotNote")} {t("tiltNote")}
-          </p>
-        ) : null}
-
-        {order.seats.length > 1 ? (
-          <div className="mt-4 flex items-center justify-center gap-3">
-            <button type="button" aria-label={t("back")} className="grid h-11 w-11 place-items-center rounded-full border border-ticket-muted" onClick={() => setI((n) => (n - 1 + order.seats.length) % order.seats.length)}>
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <span className="text-sm font-semibold">{t("ofSeats", { i: i + 1, n: order.seats.length })}</span>
-            <button type="button" aria-label={t("next")} className="grid h-11 w-11 place-items-center rounded-full border border-ticket-muted" onClick={() => setI((n) => (n + 1) % order.seats.length)}>
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </div>
-        ) : null}
-
-        <section className="mt-6 rounded-xl border border-ticket-muted/30">
-          <button type="button" className="flex h-12 w-full items-center justify-between px-4 text-left font-extrabold" onClick={() => setOpen((v) => !v)}>
-            {t("ticketDetails")}
-            <span className="text-sm font-semibold text-ticket-muted">{open ? "–" : "+"}</span>
-          </button>
-          {open ? (
-            <dl className="space-y-2 border-t border-ticket-muted/30 px-4 py-3 text-sm">
+            <Block title={t("directions")}>
+              <Row k={t("gate")} v={gate} />
+              <Row k={t("doors")} v={doorTime} />
+              <Row k={t("entry")} v={entryLevel(order.tier, lang)} />
+              <Row k={t("secLabel")} v={order.section} />
+              <Row k={t("rowLabel")} v={order.row} />
+              <Row k={t("seatLabel")} v={String(seat ?? "—")} />
+            </Block>
+            <Block title={t("orderNo")}>
               <Row k={t("orderNo")} v={orderNo} />
-              <Row k={t("purchaser")} v={`${order.buyer} · ${order.email}`} />
+              <Row k={t("purchaser")} v={order.buyer} />
+              <Row k="Email" v={order.email} />
               <Row k={t("faceListed")} v={money(order.face, order.currency, lang)} />
-              <Row k={t("paid")} v={order.total === 0 ? `${t("free")} · ${t("comp")}` : money(order.total, order.currency, lang)} />
-              <Row k={t("billing")} v={order.last4 === "FREE" ? t("comp") : `•••• ${order.last4}`} />
+              <Row k={t("paid")} v={order.total === 0 ? t("free") : money(order.total, order.currency, lang)} />
               <Row k={t("delivery")} v={t("mobileEntry")} />
-              <Row k={t("barcodeReady")} v={active ? t("safetixLive") : order.status} />
+            </Block>
+            <Block title={t("eventWord")}>
+              <Row k={t("eventWord")} v={event.title} />
+              <Row k={t("venueWord")} v={event.venue} />
+              <Row k={t("cityWord")} v={placeLine(event)} />
+              <Row k={t("dateWord")} v={when} />
+            </Block>
+            <Block title={t("venuePolicies")}>
               <Row k={lang === "es" ? "Edad" : "Age"} v={lang === "es" ? event.ageEs : event.ageEn} />
               <Row k={t("bagPolicy")} v={t("bagBody")} />
-              <Row k={t("important")} v={t("infoBody")} />
-              <p className="pt-1 text-xs text-ticket-muted">{t("demoTicket")}</p>
-            </dl>
-          ) : null}
-        </section>
+              <Row k={t("accessibility")} v={t("accessBody")} />
+            </Block>
+            <Block title={t("importantInfo")}>
+              <p className="text-sm text-[#d0d0d0]">{t("barcodeLine")}</p>
+              <p className="mt-2 text-sm text-[#d0d0d0]">{t("infoBody")}</p>
+              <p className="mt-2 text-xs text-[#8d8d8d]">{t("demoTicket")}</p>
+            </Block>
 
-        {active ? (
-          <div className="mt-6 grid grid-cols-2 gap-2">
-            <Link to="/sell/$orderId" params={{ orderId: order.id }} className="grid h-11 place-items-center rounded bg-ticket-fg font-bold text-ticket">
-              {t("listForSale")}
-            </Link>
-            <Transfer orderId={order.id} />
+            {active ? (
+              <div className="mt-5">
+                <p className="text-xs font-bold uppercase tracking-wide text-[#9a9a9a]">{t("manage")}</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button type="button" className="h-11 rounded bg-white font-bold text-black" onClick={() => void navigate({ to: "/sell/$orderId", params: { orderId: order.id } })}>
+                    {t("listForSale")}
+                  </button>
+                  <Transfer orderId={order.id} />
+                </div>
+              </div>
+            ) : order.status === "listed" ? (
+              <button type="button" className="mt-5 h-11 w-full rounded bg-white font-bold text-black" onClick={() => useApp.getState().cancelList(order.id)}>
+                {t("cancelListing")}
+              </button>
+            ) : null}
           </div>
-        ) : order.status === "listed" ? (
-          <button type="button" className="mt-6 h-11 w-full rounded bg-ticket-fg font-bold text-ticket" onClick={() => useApp.getState().cancelList(order.id)}>
-            {t("cancelListing")}
-          </button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -211,41 +277,58 @@ function TicketPage() {
 function Cell({ k, v }: { k: string; v: string }) {
   return (
     <div>
-      <p className="text-xs font-bold uppercase text-ticket-muted">{k}</p>
-      <p className="text-3xl font-extrabold">{v}</p>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-[#8e8e8e]">{k}</p>
+      <p className="text-[28px] font-semibold leading-none">{v}</p>
     </div>
+  );
+}
+
+function Block({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mt-4 border-t border-white/10 pt-3">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-[#9a9a9a]">{title}</h3>
+      <div className="mt-2 space-y-1.5">{children}</div>
+    </section>
   );
 }
 
 function Row({ k, v }: { k: string; v: string }) {
   return (
-    <div className="grid grid-cols-[7.5rem_1fr] gap-2">
-      <dt className="text-ticket-muted">{k}</dt>
-      <dd className="font-semibold">{v}</dd>
+    <div className="grid grid-cols-[7.2rem_1fr] gap-2 text-sm">
+      <dt className="text-[#9a9a9a]">{k}</dt>
+      <dd>{v}</dd>
     </div>
   );
 }
 
-function SafeQr({ value }: { value: string }) {
-  const [svg, setSvg] = useState("");
-  useEffect(() => {
-    let live = true;
-    void import("qrcode").then((QR) =>
-      QR.toString(value, {
-        type: "svg",
-        margin: 1,
-        errorCorrectionLevel: "M",
-        color: { dark: "#121212", light: "#ffffff" },
-      }).then((markup) => {
-        if (live) setSvg(markup);
-      }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [value]);
-  if (!svg) return <div className="aspect-square w-full animate-pulse rounded bg-surface" />;
-  return <div className="safe-qr" dangerouslySetInnerHTML={{ __html: svg }} />;
+function LiveBarcode({ seed }: { seed: string }) {
+  const rows = 10;
+  const cols = 78;
+  let h = hash(seed) || 1;
+  const bits: boolean[] = [];
+  for (let n = 0; n < rows * cols; n++) {
+    h = (Math.imul(h, 1664525) + 1013904223) >>> 0;
+    const x = n % cols;
+    if (x < 3 || x > cols - 4) bits.push((x + Math.floor(n / cols)) % 2 === 0);
+    else bits.push((h & 3) !== 0);
+  }
+  return (
+    <svg viewBox={`0 0 ${cols} ${rows}`} className="h-14 w-full" preserveAspectRatio="none" shapeRendering="crispEdges" aria-hidden>
+      {bits.map((on, n) =>
+        on ? <rect key={n} x={n % cols} y={Math.floor(n / cols)} width="1" height="1" fill="#111" /> : null,
+      )}
+    </svg>
+  );
+}
+
+function WalletMark() {
+  return (
+    <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden>
+      <rect x="1" y="3" width="20" height="12" rx="2" fill="#1c1c1e" stroke="#fff" />
+      <rect x="1" y="3" width="20" height="4" fill="#f2c14e" />
+      <rect x="14" y="9" width="5" height="3" rx="0.5" fill="#fff" />
+    </svg>
+  );
 }
 
 function Transfer({ orderId }: { orderId: string }) {
@@ -255,7 +338,7 @@ function Transfer({ orderId }: { orderId: string }) {
   const [email, setEmail] = useState("");
   if (!open) {
     return (
-      <button type="button" className="h-11 rounded border border-ticket-muted font-bold" onClick={() => setOpen(true)}>
+      <button type="button" className="h-11 rounded border border-white/30 font-bold" onClick={() => setOpen(true)}>
         {t("transfer")}
       </button>
     );
@@ -269,8 +352,8 @@ function Transfer({ orderId }: { orderId: string }) {
         transfer(orderId, email);
       }}
     >
-      <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required placeholder={t("transferTo")} className="h-11 min-w-0 flex-1 rounded px-3 text-fg" />
-      <button type="submit" className="h-11 rounded bg-blue px-3 font-bold text-on-blue">
+      <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required placeholder={t("transferTo")} className="h-11 min-w-0 flex-1 rounded px-3 text-black" />
+      <button type="submit" className="h-11 rounded bg-[#026cdf] px-3 font-bold text-white">
         {t("send")}
       </button>
     </form>

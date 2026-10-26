@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { artistBy, byDate, eventImage, events } from "@/data/catalog";
+import { artistBy, asset, byDate, eventImage, events } from "@/data/catalog";
 import { useApp } from "@/lib/store";
 import { DateRow, btn, btnGhost } from "@/components/cards";
 import { useT } from "@/components/use-t";
@@ -23,7 +23,7 @@ function ArtistPage() {
     );
   }
   const rows = events.filter((e) => e.artist === slug).sort(byDate);
-  const cover = rows[0] ? eventImage(rows[0]) : "/media/arena.jpg";
+  const cover = rows[0] ? eventImage(rows[0]) : asset("/media/arena.jpg");
   return (
     <main className="mx-auto max-w-3xl px-4 py-6">
       <div className="overflow-hidden rounded-xl bg-surface">
